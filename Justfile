@@ -160,7 +160,7 @@ cp-from name src dest:
 list:
     @docker ps -a \
         --filter "name=claude-" \
-        --format "table {{.Names}}\t{{.Status}}\t{{.CreatedAt}}" \
+        --format "table {{{{.Names}}}}\t{{{{.Status}}}}\t{{{{.CreatedAt}}}}" \
         | sed 's/claude-//g'
 
 # Show logs for a container
@@ -169,7 +169,7 @@ logs name:
 
 # Show live resource usage for all running claude containers
 stats:
-    docker stats $(docker ps --filter "name=claude-" --format "{{.Names}}" | tr '\n' ' ')
+    docker stats $(docker ps --filter "name=claude-" --format "{{{{.Names}}}}" | tr '\n' ' ')
 
 # ── internal helpers ─────────────────────────────────────────────────────────
 
@@ -177,7 +177,7 @@ stats:
 _ensure_running name:
     #!/usr/bin/env bash
     set -euo pipefail
-    status=$(docker inspect -f '{{.State.Status}}' "claude-{{name}}" 2>/dev/null || echo "missing")
+    status=$(docker inspect -f '{{{{.State.Status}}}}' "claude-{{name}}" 2>/dev/null || echo "missing")
     if [ "$status" = "missing" ]; then
         echo "ERROR: Container 'claude-{{name}}' does not exist."
         echo "Run: just create {{name}}"
