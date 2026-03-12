@@ -40,7 +40,7 @@ setup:
         exit 1; \
     }
     @echo "Docker is running."
-    @docker version --format 'Client: {{.Client.Version}}  Server: {{.Server.Version}}'
+    @docker version --format 'Client: {{{{.Client.Version}}}}  Server: {{{{.Server.Version}}}}'
     @echo ""
     @echo "Setup complete. Run 'just build' to build the container image."
 
