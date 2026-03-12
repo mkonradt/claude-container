@@ -1,786 +1,288 @@
-# Claude Container: A Complete Beginner's Guide
+# Getting Started: Claude Code Containers on Windows
 
-## Table of Contents
-
-- [What Is This and Why Should I Care?](#what-is-this-and-why-should-i-care)
-- [Key Concepts (Plain English)](#key-concepts-plain-english)
-- [What You Need Before Starting](#what-you-need-before-starting)
-- [Installation: Step by Step](#installation-step-by-step)
-- [Your First Project](#your-first-project)
-- [Working With Claude Inside the Container](#working-with-claude-inside-the-container)
-- [Managing Your Containers](#managing-your-containers)
-- [Moving Files In and Out](#moving-files-in-and-out)
-- [Use Cases for Academic Research](#use-cases-for-academic-research)
-- [Recipes Reference](#recipes-reference)
-- [Troubleshooting](#troubleshooting)
-- [Glossary](#glossary)
+This guide walks you through setting up isolated Docker containers for running Claude Code on Windows, using **WSL2 + Docker Desktop**.
 
 ---
 
-## What Is This and Why Should I Care?
+## The Big Picture
 
-Claude Code is an AI assistant that can read, write, and run code directly on your computer. It is incredibly powerful — it can install software, create files, run scripts, and modify your system. That power is also what makes it risky. If you ask Claude to "clean up my project" and it misunderstands, it could delete files you care about. If a script goes wrong, it could affect other things on your machine.
+A container is like a lightweight virtual computer running inside your real computer. It has its own Linux operating system, its own installed programs, and its own files — but it starts in seconds and uses very little memory.
 
-**Claude Container solves this problem.** It gives Claude its own isolated computer (a "container") to work in. Claude gets full, unrestricted access inside that container — it can install anything, run anything, break anything — and none of it touches your real computer. Your project files are shared between the container and your computer through a single folder, so you always have access to the work Claude produces.
+The key idea: Claude Code runs *inside* the container and can make a mess in there all day long. Your Windows files stay completely untouched. A shared folder (called a bind mount) lets you exchange files back and forth. Your work survives even if the container is destroyed — the container is disposable, the project folder is permanent.
 
-Think of it like giving Claude its own office with a desk, tools, and a copy machine. Claude can make a mess in that office all day long, and your office stays clean. The copy machine (the shared folder) lets you exchange documents back and forth.
+On Mac this setup uses Colima as the Docker runtime. On Windows the equivalent is **WSL2** (a real Linux environment built into Windows) with **Docker Desktop** running on top of it.
 
 ---
 
-## Key Concepts (Plain English)
+## Prerequisites
 
-### The Terminal
+- Windows 10 version 2004 or later, or Windows 11
+- Virtualization enabled in your BIOS (most modern PCs have this on by default)
+- A Claude Pro or Max subscription, **or** an Anthropic API key
 
-The terminal (also called "command line" or "shell") is a text-based way to talk to your computer. Instead of clicking icons, you type commands. On a Mac, you can open it by pressing `Cmd + Space`, typing "Terminal", and pressing Enter.
+> **Do I have virtualization enabled?** Open Task Manager (`Ctrl+Shift+Esc`), click the Performance tab, click CPU. If you see "Virtualization: Enabled" you are good. If it says Disabled, search for your PC model + "enable virtualization" for BIOS instructions.
 
-When you see instructions like this:
+---
 
-```bash
-just build
+## Part 1: Install WSL2
+
+WSL2 (Windows Subsystem for Linux 2) creates a real Linux environment inside Windows. This is where Docker and Claude Code will actually run.
+
+Open **PowerShell as Administrator** — search for PowerShell in the Start menu, right-click, choose "Run as administrator" — then run:
+
+```powershell
+wsl --install
 ```
 
-That means: open your terminal, type `just build`, and press Enter.
+This installs WSL2 with Ubuntu automatically. **Restart your computer** when it finishes.
 
-### Docker and Containers
+After restarting, Ubuntu will open and ask you to create a Linux username and password. Choose something simple — this is separate from your Windows password.
 
-A **container** is like a lightweight virtual computer running inside your real computer. It has its own operating system (Linux), its own installed programs, and its own files. But unlike a full **virtual machine** (a complete simulated computer, which is heavy and slow to start), a container starts in seconds and uses very little memory.
-
-**Docker** is the software that creates and runs these containers. You tell Docker "here's a blueprint" (called a Dockerfile), and it builds a container from that blueprint.
-
-You don't need to learn Docker commands — this project wraps everything in simple `just` commands for you.
-
-### Colima
-
-Docker normally requires "Docker Desktop," which is a large commercial application. **Colima** is a free, lightweight alternative that runs Docker on your Mac. Our setup script installs it for you.
-
-Behind the scenes, Colima creates a small Linux virtual machine (a simulated computer) on your Mac, and Docker runs inside that. You'll never need to interact with Colima directly after the initial setup.
-
-### Justfile and `just`
-
-A **Justfile** is like a recipe book for your terminal. Instead of remembering long, complicated commands, you type short ones like `just build` or `just create my-project`. The Justfile translates these into the real commands behind the scenes.
-
-**`just`** is the program that reads the Justfile and runs the recipes. It's similar to `make` if you've heard of that, but simpler.
-
-### Bind Mounts (The Shared Folder)
-
-When you create a container, a folder is created on your Mac at `projects/<name>/`. This same folder appears inside the container at `/workspace`. Any file you put in either location instantly appears in the other.
-
-This is how your work survives even if the container is destroyed. The container is disposable; the project folder is permanent.
-
-### YOLO Mode
-
-Claude Code normally asks your permission before doing anything significant — "Can I create this file? Can I run this command?" This is safe but slow, especially for complex tasks.
-
-**YOLO mode** (`--dangerously-skip-permissions`) tells Claude to just do it without asking. Inside a container, this is safe because Claude can't affect your real computer. It makes Claude dramatically faster and more autonomous for complex tasks.
-
-### Authentication: Subscription vs API Key
-
-There are two ways to use Claude Code:
-
-1. **Claude subscription** (Pro or Max plan at [claude.ai](https://claude.ai)) — You log in once per container with `just login <name>`. Claude Code usage is included in your subscription. This is the simplest option.
-
-2. **API key** — You get a key from [console.anthropic.com](https://console.anthropic.com/) and put it in a `.env` file. Usage is billed per conversation. The key looks something like `sk-ant-abc123...`.
-
-**You only need one of these.** If you have a Claude Pro or Max subscription, you don't need an API key at all.
+> **Already have WSL1?** Check with `wsl -l -v` in PowerShell. If your distro shows VERSION 1, upgrade it with `wsl --set-version Ubuntu 2`.
 
 ---
 
-## What You Need Before Starting
+## Part 2: Install Docker Desktop
 
-1. **A Mac** with Apple Silicon (M1/M2/M3/M4). Intel Macs may work but require manual Colima configuration — see Troubleshooting.
-2. **Homebrew** — a package manager for Mac. If you don't have it, open Terminal and paste:
-   ```bash
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-   ```
-   Follow the prompts. This may take a few minutes.
-3. **just** — install it with Homebrew:
-   ```bash
-   brew install just
-   ```
-4. **A Claude subscription or API key** — either a [Claude Pro/Max subscription](https://claude.ai) or an [Anthropic API key](https://console.anthropic.com/) (Settings > API Keys). You only need one.
+1. Download Docker Desktop from **https://www.docker.com/products/docker-desktop/**
+2. Run the installer. When asked, make sure **"Use WSL 2 instead of Hyper-V"** is checked.
+3. Restart your computer when prompted.
+4. After restart, Docker Desktop opens — accept the terms and let it finish starting up (the whale icon in your system tray stops animating).
 
----
+**Enable WSL2 integration:** Docker Desktop → Settings → Resources → WSL Integration → enable integration with your Ubuntu distro → Apply & Restart.
 
-## Installation: Step by Step
-
-### Step 1: Download this project
-
-Open Terminal and run:
+**Verify Docker works.** Open your Ubuntu terminal (search "Ubuntu" in Start menu) and run:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/claude-container.git
+docker run hello-world
+```
+
+You should see "Hello from Docker!". If you do, Docker is working correctly.
+
+---
+
+## Part 3: Install Prerequisites Inside WSL2
+
+All remaining steps happen inside your **Ubuntu terminal**, not PowerShell.
+
+### Install Node.js
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs
+```
+
+Verify: `node --version` should show v22 or higher.
+
+### Install `just`
+
+`just` is a command runner — it replaces long complicated commands with short ones like `just build` or `just create my-project`.
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to ~/.local/bin
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+Verify: `just --version` should print a version number.
+
+### Install Git
+
+```bash
+sudo apt install -y git
+```
+
+---
+
+## Part 4: Set Up SSH and Clone the Repository
+
+GitHub requires SSH authentication. First generate an SSH key inside WSL2:
+
+```bash
+ssh-keygen -t ed25519 -C "your.email@example.com"
+```
+
+Hit Enter three times to accept defaults. Then copy your public key:
+
+```bash
+cat ~/.ssh/id_ed25519.pub
+```
+
+Go to **github.com → Settings → SSH and GPG keys → New SSH key**, paste it and save.
+
+Now clone your forked repo:
+
+```bash
+cd ~
+git clone git@github.com:mkonradt/claude-container.git
 cd claude-container
 ```
 
-Replace `YOUR_USERNAME` with the actual GitHub username or organization where this repository (repo) is hosted.
+> **Important:** Keep this folder inside your Linux home directory (`/home/yourusername/`), not on your Windows C: drive. Accessing Windows files from WSL2 (paths under `/mnt/c/`) is significantly slower.
 
-> **Note:** If this is your first time using `git` on a Mac, you may see a pop-up asking to install "Xcode Command Line Tools." Click "Install" and wait for it to finish (this can take 5-10 minutes), then run the commands above again.
->
-> **Alternative if you don't want to use git:** Download the project as a ZIP file from the GitHub page (look for a green "Code" button, then "Download ZIP"), unzip it, and open Terminal in that folder.
+---
 
-You are now "inside" the project folder. **All `just` commands must be run from this folder.** If you open a new Terminal window later, navigate back here first:
+## Part 5: Configure Your API Key (API Key Users Only)
 
-```bash
-cd /path/to/claude-container
-```
-
-> **Tip: Run commands from anywhere with `ccr`**
->
-> The repo includes a small script called `ccr` (Claude Container Runner) that lets you run any recipe from any folder — no need to `cd` back here each time. To set it up:
->
-> ```bash
-> # Copy the script to a folder on your PATH
-> cp ccr ~/bin/ccr       # or /usr/local/bin/ccr
-> chmod +x ~/bin/ccr
-> ```
->
-> If you cloned this repo somewhere other than `~/repos/claude-container`, tell `ccr` where to find it by adding this line to your `~/.zshrc`:
->
-> ```bash
-> export CLAUDE_CONTAINER_DIR="$HOME/path/to/claude-container"
-> ```
->
-> Then, anywhere on your system, use `ccr` instead of `just`:
->
-> ```bash
-> ccr build
-> ccr create my-project
-> ccr claude my-project
-> ccr list
-> ccr --recipes          # show all available recipes
-> ```
->
-> All the examples in this guide use `just`, but you can always substitute `ccr` if you've set it up.
-
-### Step 2: Set up authentication
-
-You have two options depending on how you pay for Claude. **Pick one:**
-
-#### Option A: Claude subscription (Pro/Max) — recommended
-
-No setup needed at this step. You'll log in after creating your first container (Step 5). Skip ahead to Step 3.
-
-#### Option B: API key
+If you are using an Anthropic API key rather than a Claude Pro/Max subscription:
 
 ```bash
 cp .env.example .env
-```
-
-The `cp` command means "copy." This creates a new file called `.env` by copying the example template.
-
-> **Note about dotfiles:** Files whose names start with a `.` (like `.env`) are "hidden files" on macOS. You won't see them in Finder by default. In Terminal, use `ls -a` (list all) to see them. In Finder, press `Cmd+Shift+.` to toggle hidden file visibility.
-
-Now open `.env` in a text editor. You can use any editor you like, or use `nano` in the terminal:
-
-```bash
 nano .env
 ```
 
-This opens a simple text editor in your terminal. Use the arrow keys to navigate. Change the `ANTHROPIC_API_KEY=` line to include your key:
+Replace `your_api_key_here` with your actual key from https://console.anthropic.com/. Save with `Ctrl+O`, Enter, then `Ctrl+X`.
 
-```
-ANTHROPIC_API_KEY=sk-ant-your-actual-key-here
-```
+**Subscription users:** skip this step — you will log in interactively in Part 8.
 
-Then press `Ctrl+O` (the letter O) to save, press Enter to confirm, and `Ctrl+X` to exit.
+---
 
-This file is private — it's listed in `.gitignore` (a special file that tells git "never upload these files"), so it will never be accidentally shared even if you publish your project.
-
-### Step 3: Install Colima and Docker
+## Part 6: Verify Setup
 
 ```bash
 just setup
 ```
 
-**What this does:**
-1. Installs Colima (the Docker runtime) and the Docker command-line tool via Homebrew
-2. Starts a Linux virtual machine with 4 CPU cores, 8 GB of RAM, and 60 GB of disk space
-3. Configures it to use Apple's native virtualization (fast and efficient on Apple Silicon)
+This checks that Docker Desktop is running and reachable from WSL2. If it fails, make sure Docker Desktop is open on Windows and WSL2 integration is enabled (see Part 2).
 
-This step typically takes 3-5 minutes the first time on a fast internet connection. You'll see download progress and Homebrew output scrolling by. When you see a message like `done` or your terminal prompt returns, Docker is ready.
+---
 
-**If you see an error about Colima already running**, that's fine — it means you've done this before.
-
-### Step 4: Build the container image
+## Part 7: Build the Container Image
 
 ```bash
 just build
 ```
 
-**What this does:** Docker reads the `Dockerfile` (the blueprint) and builds an image — a snapshot of a Linux system with all the tools pre-installed. This includes:
-
-- Python 3 and uv (a fast Python package manager)
-- Node.js 22 (for JavaScript)
-- R (for statistical computing)
-- DuckDB (a fast analytical database)
-- git, just, and build tools
-- Claude Code CLI
-
-The first build downloads a lot and takes several minutes. Future builds are much faster because Docker caches each step.
+This downloads and assembles the container image with all tools pre-installed: Python, R, Node.js, DuckDB, Git, Claude Code CLI, and more. Takes a few minutes the first time. Future builds are much faster because Docker caches each step.
 
 ---
 
-## Your First Project
-
-### Create a container
+## Part 8: Create Your First Project
 
 ```bash
 just create my-first-project
 ```
 
-**What this does:**
-1. Creates a folder on your Mac: `projects/my-first-project/`
-2. Creates a Docker container named `claude-my-first-project`
-3. Links the folder so the container can read and write to it
+This creates a folder at `projects/my-first-project/` inside your `claude-container` directory. Anything Claude creates inside `/workspace` inside the container will appear here instantly.
 
-The container is created but not yet running (think of it as a powered-off computer).
+To access these files from Windows Explorer, navigate to:
 
-### Log in (subscription users only)
+```
+\\wsl$\Ubuntu\home\<your-linux-username>\claude-container\projects\
+```
 
-If you use a Claude Pro or Max subscription, log in once per container:
+---
+
+## Part 9: Log In to Claude
+
+### Subscription users (Pro or Max)
 
 ```bash
 just login my-first-project
 ```
 
-**What this does:** Runs `claude login` inside the container. It will display a URL — open that URL in your browser, sign in with your Claude account, and the container will be authenticated. You only need to do this once per container (it survives stop/start, but not destroy/create).
+This displays a URL — open it in your Windows browser, sign in with your Claude account, and the container is authenticated. You only need to do this once per container (it survives stop/start, but not destroy/recreate).
 
-API key users can skip this step — your key was already configured via `.env`.
+### API key users
 
-### Start Claude
+No login needed. Your key was passed in automatically via `.env`.
+
+---
+
+## Part 10: Start Claude
 
 ```bash
 just claude my-first-project
 ```
 
-**What this does:**
-1. Starts the container (if it isn't already running)
-2. Opens Claude Code inside the container in YOLO mode
-3. You now have an interactive conversation with Claude, and Claude has full access to the container
+Claude's interface appears in your terminal. Type requests in plain English:
 
-You'll see Claude's interface appear. You can type requests like:
-
-- "Create a Python script that analyzes a CSV file"
-- "Set up a new R project with tidyverse"
-- "Build me a simple web dashboard"
-
-When you're done, press `Ctrl+C` or type `/exit` to leave Claude. The container stays running.
-
-### Verify your files are shared
-
-While Claude is running (or after, using `just shell`), any files Claude creates in `/workspace` will appear on your Mac in `projects/my-first-project/`. Try it:
-
-```bash
-ls projects/my-first-project/
+```
+Create a Python script that reads all PDF files in /workspace and extracts all text to a CSV
 ```
 
-The `ls` command means "list" — it shows the files in a folder. You'll see whatever Claude created.
-
-### Open a plain shell (no Claude)
-
-```bash
-just shell my-first-project
+```
+Search for news articles about copper mine disruptions in the last 6 months and save a structured list to /workspace/events.csv
 ```
 
-This gives you a regular Linux command line inside the container. You can explore, run scripts, install packages, or do anything you'd do on a Linux machine. Type `exit` to leave.
+When you are done, press `Ctrl+C` or type `/exit`. The container keeps running in the background.
 
 ---
 
-## Working With Claude Inside the Container
+## Daily Workflow
 
-### YOLO Mode vs Safe Mode
-
-You have two ways to run Claude:
-
-| Command | Mode | When to Use |
-|---------|------|-------------|
-| `just claude my-project` | YOLO | Day-to-day work. Claude acts autonomously. |
-| `just claude-safe my-project` | Safe | When you want to approve each action Claude takes. |
-
-YOLO mode is the default and recommended mode inside containers. Since the container is isolated, there's no risk to your real computer.
-
-### Giving Claude a specific task
-
-You can pass a prompt directly:
+Once set up, your day-to-day usage is just:
 
 ```bash
-just claude my-project "Read the CSV files in this directory and create summary statistics"
-```
-
-Or start an interactive session (no prompt) and type your request:
-
-```bash
-just claude my-project
-```
-
-### What Claude can do inside the container
-
-Claude has access to everything a regular Linux user would:
-
-- **Read and write files** in `/workspace` (your shared project folder)
-- **Run Python, R, Node.js, or shell scripts**
-- **Install packages** (`uv pip install pandas`, `npm install express`, `R -e 'install.packages("ggplot2")'`)
-- **Use git** to manage version control
-- **Query databases** with DuckDB
-- **Access the internet** to download data or packages
-- **Use `sudo`** (run as administrator) to install system-level software
-
----
-
-## Managing Your Containers
-
-### Day-to-day workflow
-
-```bash
-# Start your work session
-just claude my-project
-
-# ... work with Claude ...
-
-# When done for the day, stop the container to free resources
-just stop my-project
-
-# Next day, just run claude again — it auto-starts
-just claude my-project
-```
-
-### See all your containers
-
-```bash
-just list
-```
-
-This shows every claude container, whether it's running or stopped.
-
-### Stop a container (pause it)
-
-```bash
-just stop my-project
-```
-
-Everything on disk is preserved — installed packages, configuration files, and any files Claude created. It just stops using CPU and memory. Note: any scripts or processes that were actively running will be terminated and would need to be restarted.
-
-### Start it again
-
-```bash
-just start my-project
-```
-
-Or just run `just claude my-project` or `just shell my-project` — they auto-start.
-
-### Restart (if something is stuck)
-
-```bash
-just restart my-project
-```
-
-### Destroy a container (delete the virtual machine, keep your files)
-
-```bash
-just destroy my-project
-```
-
-This removes the container entirely. Any packages Claude installed, any configuration changes inside the container — gone. **But your project files in `projects/my-project/` are safe.** They live on your Mac, not inside the container.
-
-You can recreate the container anytime:
-
-```bash
-just create my-project
-just claude my-project
-```
-
-Claude will need to reinstall any packages it needs, but your files are all still there.
-
-### Check resource usage
-
-```bash
-just stats
-```
-
-Shows CPU and memory usage for all running containers. Useful if your Mac feels sluggish.
-
-### View container logs
-
-```bash
-just logs my-project
-```
-
-Shows the internal log output from the container. Mostly useful for debugging.
-
----
-
-## Moving Files In and Out
-
-### The easy way: the shared folder
-
-Anything in `projects/my-project/` on your Mac is automatically in `/workspace` inside the container, and vice versa. For most workflows, this is all you need:
-
-- Drop a CSV into `projects/my-project/data/` on your Mac, and Claude can read it at `/workspace/data/`
-- Claude creates a report at `/workspace/output/report.pdf`, and you'll find it at `projects/my-project/output/report.pdf`
-
-### Copying files to/from other locations in the container
-
-Sometimes you need to move files to/from places other than `/workspace` (for example, a config file in `/home/coder/`):
-
-```bash
-# Copy a file from your Mac into the container
-just cp-to my-project ./local-file.txt /home/coder/file.txt
-
-# Copy a file from the container to your Mac
-just cp-from my-project /home/coder/.bashrc ./container-bashrc.txt
-```
-
-### Advanced: Extra mounts at creation time
-
-> This section uses Docker syntax and is optional. Skip it if you're just getting started.
-
-If you have a large dataset somewhere else on your Mac that you don't want to copy, you can mount it as a second shared folder when creating the container. The `--` tells `just` that everything after it is extra options to pass to Docker:
-
-```bash
-just create my-project -- -v /Users/you/datasets:/data:ro
-```
-
-Breaking down `-v /Users/you/datasets:/data:ro`:
-- `/Users/you/datasets` — the folder on your Mac
-- `/data` — where it appears inside the container
-- `:ro` — "read-only," so Claude can read but not modify your original data
-
----
-
-## Use Cases for Academic Research
-
-> **Before each example:** Every use case below assumes you have already created a container for that project with `just create <name>`. See [Your First Project](#your-first-project) above. For example, before the first use case, you would run `just create data-analysis`.
-
-### 1. Data Analysis and Exploration
-
-**Scenario:** You have a collection of CSV files, survey responses, or experimental data and need to understand it.
-
-```bash
-# Create the container first (one-time)
-just create data-analysis
-
-# Put your data in the project folder.
-# "cp -r" means "copy recursively" (the folder and everything in it).
-# "~" is shorthand for your home folder (e.g., /Users/yourname).
-cp -r ~/Downloads/experiment_data/ projects/data-analysis/
-
-# Ask Claude to explore it
-just claude data-analysis "Explore the CSV files in this directory. \
-  Summarize the structure, look for missing values, create basic \
-  descriptive statistics, and generate visualizations."
-```
-
-Claude will write Python or R scripts, run them, and produce charts and summaries — all saved in your project folder.
-
-### 2. Statistical Analysis and Modeling
-
-**Scenario:** You need to run regressions, mixed-effects models, Bayesian analysis, or other statistical methods.
-
-```bash
-just claude stats-project "I have a dataset in data.csv with columns: \
-  participant_id, condition (A/B/C), reaction_time, accuracy, age, gender. \
-  Run a mixed-effects model predicting reaction_time from condition, \
-  controlling for age and gender, with random intercepts for participant. \
-  Use R with lme4. Create publication-ready tables and plots."
-```
-
-Claude installs the necessary R packages, writes the analysis script, runs it, and produces output you can put directly in a paper.
-
-### 3. Literature Review and Text Analysis
-
-**Scenario:** You have a collection of PDFs or text files and want to analyze themes, extract information, or build a structured database.
-
-```bash
-just claude lit-review "I have a folder of plain-text abstracts from a \
-  systematic review. Categorize each abstract by methodology \
-  (qualitative/quantitative/mixed), extract the sample size and \
-  key findings, and create a summary spreadsheet."
-```
-
-### 4. Writing and Editing Assistance
-
-**Scenario:** You're drafting a paper, grant proposal, or dissertation chapter.
-
-```bash
-just claude writing "Read draft.md in this directory. This is a methods \
-  section for a psychology paper. Suggest improvements for clarity, \
-  check that the statistical reporting follows APA format, and flag \
-  any claims that aren't well-supported by the described methodology."
-```
-
-### 5. Web Scraping and Data Collection
-
-**Scenario:** You need to collect data from public websites, government databases, or APIs.
-
-```bash
-just claude scraping "Write a Python script that downloads all publicly \
-  available CSV datasets from data.gov matching the search term \
-  'air quality'. Save them in a data/ subdirectory with a manifest \
-  file listing each dataset's URL, title, and download date."
-```
-
-Claude can install `requests`, `beautifulsoup4`, `selenium`, or whatever is needed — without affecting your Mac.
-
-### 6. Reproducible Research Environments
-
-**Scenario:** You want to ensure your analysis can be reproduced exactly.
-
-```bash
-just claude repro-project "Set up a reproducible Python project. \
-  Create a pyproject.toml with pinned dependencies, a Makefile that \
-  runs the full analysis pipeline from raw data to final figures, \
-  and a README explaining how to reproduce the results."
-```
-
-Because the container starts from a known image, your collaborators can recreate the exact same environment.
-
-### 7. Teaching and Course Development
-
-**Scenario:** You're preparing coding assignments, tutorials, or lecture materials.
-
-```bash
-just claude course-materials "Create a set of 5 progressive Python \
-  exercises teaching pandas for data analysis. Each exercise should \
-  have a starter file with instructions, a solution file, a sample \
-  dataset, and auto-grading tests. Target audience: social science \
-  graduate students with no prior Python experience."
-```
-
-### 8. Database Work
-
-**Scenario:** You have large datasets that would benefit from SQL queries.
-
-DuckDB is pre-installed and can directly query CSV and Parquet files without importing them:
-
-```bash
-just claude db-project "I have several large CSV files (>1GB each) in \
-  this directory. Use DuckDB to: (1) explore their schemas, \
-  (2) join them on participant_id, (3) run aggregate queries \
-  to compute summary statistics by group, (4) export the results \
-  as a clean CSV."
-```
-
-### 9. Simulation and Computational Experiments
-
-**Scenario:** You need to run Monte Carlo simulations, agent-based models, or other computational experiments.
-
-```bash
-just claude simulation "Write a Python simulation of a Schelling \
-  segregation model. Run it across a grid of parameters \
-  (tolerance = 0.3, 0.5, 0.7; grid sizes = 50, 100, 200). \
-  Save results as CSV and generate heatmap visualizations \
-  of the final states."
-```
-
-If the simulation is CPU-intensive, it runs inside the container without slowing down your other Mac applications (much).
-
-### 10. Multi-Language Projects
-
-**Scenario:** Your workflow spans multiple languages — R for statistics, Python for data cleaning, JavaScript for a visualization dashboard.
-
-The container has all three runtimes pre-installed. Claude can seamlessly switch between them:
-
-```bash
-just claude multi-lang "Clean the raw data using Python pandas, \
-  run the statistical models in R, and build an interactive \
-  HTML dashboard using Observable Plot in JavaScript. \
-  Wire them together with a just recipe that runs the full pipeline."
-```
-
-### 11. Working on Multiple Projects Simultaneously
-
-Each container is independent. You can have as many as you need:
-
-```bash
-just create dissertation-ch3
-just create grant-nsf-2026
-just create collab-with-jones-lab
-just create teaching-stats101
-
-# Work on one
-just claude dissertation-ch3
-
-# Switch to another (the first keeps running)
-just claude grant-nsf-2026
-```
-
-Each project has its own folder, its own container, and its own installed packages. They don't interfere with each other.
-
-### 12. Safe Experimentation
-
-**Scenario:** You want to try a new tool, library, or approach without risking your current setup.
-
-```bash
-just create experiment
-just shell experiment
-
-# Inside the container, install and try anything
-sudo apt-get install -y some-obscure-tool
-uv pip install some-experimental-library
-
-# If it all goes wrong
-exit
-just destroy experiment   # Gone. No trace.
-just create experiment    # Fresh start.
+cd ~/claude-container
+just claude my-first-project     # start a session
+just stop my-first-project       # shut down when done
 ```
 
 ---
 
-## Recipes Reference
+## Managing Multiple Projects
 
-Run any of these from the `claude-container` directory:
+```bash
+just create metal-shocks
+just create green-capex
+just claude metal-shocks
+```
 
-| Command | What It Does |
-|---------|-------------|
-| `just setup` | One-time setup: installs Colima and Docker, starts the VM |
-| `just build` | Builds the container image from the Dockerfile |
-| `just rebuild` | Rebuilds from scratch (ignoring cache). Use if the image seems broken |
-| `just create <name>` | Creates a new container and its project folder |
-| `just create <name> -- <args>` | Creates a container with extra Docker options (ports, mounts, etc.) |
-| `just login <name>` | Log in with Claude subscription (once per container) |
-| `just start <name>` | Starts a stopped container |
-| `just stop <name>` | Stops a running container (preserves state) |
-| `just restart <name>` | Restarts a container |
-| `just shell <name>` | Opens a terminal inside the container |
-| `just claude <name>` | Opens Claude in YOLO mode (interactive) |
-| `just claude <name> "prompt"` | Runs Claude with a specific task |
-| `just claude-safe <name>` | Opens Claude with permission prompts |
-| `just claude-safe <name> "prompt"` | Runs safe-mode Claude with a specific task |
-| `just cp-to <name> <src> <dest>` | Copies a file from your Mac into the container |
-| `just cp-from <name> <src> <dest>` | Copies a file from the container to your Mac |
-| `just destroy <name>` | Deletes the container (project files are kept) |
-| `just list` | Shows all claude containers and their status |
-| `just logs <name>` | Shows the container's log output |
-| `just stats` | Shows CPU/memory usage for all running containers |
-| `just colima-start` | Starts the Colima VM (if you stopped it) |
-| `just colima-stop` | Stops the Colima VM (frees all resources) |
-| `just colima-status` | Shows whether the Colima VM is running |
+Each project has its own installed packages, history, and workspace folder — fully isolated from each other.
+
+---
+
+## Commands Reference
+
+| Command | What it does |
+|---|---|
+| `just setup` | Verify Docker Desktop is running and accessible |
+| `just build` | Build the container image (once) |
+| `just create <n>` | Create a new project container |
+| `just claude <n>` | Start Claude in YOLO mode (no permission prompts) |
+| `just claude-safe <n>` | Start Claude with permission prompts |
+| `just shell <n>` | Open a bash shell inside the container |
+| `just start <n>` | Start a stopped container |
+| `just stop <n>` | Stop a running container |
+| `just login <n>` | Authenticate with Claude subscription |
+| `just list` | Show all your containers |
+| `just destroy <n>` | Delete the container (project files kept) |
+| `just cp-to <n> <src> <dest>` | Copy files from WSL2 into the container |
+| `just cp-from <n> <src> <dest>` | Copy files from container back out |
+
+---
+
+## YOLO Mode vs Safe Mode
+
+The default `just claude` runs in YOLO mode (`--dangerously-skip-permissions`). Claude won't ask permission before creating files, running scripts, or making changes. This is safe because the container is the security boundary — Claude can only touch files inside `/workspace`, not your actual Windows system.
+
+Use `just claude-safe` if you prefer to approve each action.
+
+---
+
+## Customising Claude's Behaviour
+
+Edit these files, then run `just rebuild` to apply to all future containers:
+
+- `config/CLAUDE.md` — standing instructions Claude reads at every session start. Add preferred libraries, output formats, project context, or any other guidance.
+- `config/claude-settings.json` — permission settings and behaviour flags.
 
 ---
 
 ## Troubleshooting
 
-### `just` commands don't work / "No justfile found"
+**"Cannot connect to Docker" / "Docker daemon not running"**
+Open Docker Desktop from the Start menu and wait for the whale icon to stop animating. Then try again.
 
-Make sure you are in the `claude-container` directory. All `just` commands must be run from inside this folder:
+**WSL Integration not working**
+Docker Desktop → Settings → Resources → WSL Integration → enable your Ubuntu distro → Apply & Restart.
 
-```bash
-cd /path/to/claude-container
-```
+**"just: command not found"**
+Run `source ~/.bashrc` to reload your PATH, then try again.
 
-### "command not found: just"
+**Slow file access**
+Make sure your `claude-container` folder is under `/home/username/` in WSL2, not under `/mnt/c/`. Cross-filesystem access is significantly slower.
 
-Install just: `brew install just`
-
-### "Cannot connect to the Docker daemon"
-
-Colima isn't running. Start it:
-
-```bash
-just colima-start
-```
-
-### "just build" is failing or taking forever
-
-Make sure Colima is running (`just colima-status`). If the build fails on a specific step, try `just rebuild` for a clean build. Check your internet connection — the build downloads packages from the internet.
-
-### "Container already exists"
-
-You already created a container with that name. Either use it (`just claude <name>`) or destroy and recreate it:
-
-```bash
-just destroy <name>
-just create <name>
-```
-
-### Claude says it's not authenticated / "ANTHROPIC_API_KEY not set"
-
-**Subscription users:** Run `just login <name>` to authenticate. You need to do this once per container (and again after `just destroy` + `just create`).
-
-**API key users:** Make sure you have a `.env` file (not `.env.example`) with your actual API key:
-
-```bash
-cat .env
-# Should show: ANTHROPIC_API_KEY=sk-ant-...
-```
-
-If you created the container before adding the key, destroy and recreate it:
-
-```bash
-just destroy <name>
-just create <name>
-```
-
-### My Mac is slow with containers running
-
-Stop containers you aren't using:
-
-```bash
-just stats        # See what's using resources
-just stop <name>  # Stop idle containers
-```
-
-Or stop Colima entirely when you're done for the day:
-
-```bash
-just colima-stop
-```
-
-### `just setup` fails on an Intel Mac
-
-The default setup uses Apple Silicon-specific options (`--vm-type vz --vz-rosetta`). On an Intel Mac, run the setup steps manually:
-
-```bash
-brew install colima docker
-colima start --cpu 4 --memory 8 --disk 60
-```
-
-### I want to start completely fresh
-
-```bash
-just destroy <name>    # Remove the container
-just create <name>     # Recreate it from the base image
-```
-
-Your project files in `projects/<name>/` are untouched. Only the container (installed packages, config changes) is reset.
-
----
-
-## Advanced: Customizing Claude's Behavior
-
-The project includes two configuration files that control how Claude behaves inside containers. You can edit these and then run `just rebuild` to apply changes to all future containers.
-
-- **`config/CLAUDE.md`** — Instructions that Claude reads when it starts. You can add project-wide conventions, preferred libraries, coding style, or any other guidance. Think of it as a standing set of instructions for your research assistant.
-
-- **`config/claude-settings.json`** — Controls Claude's permission settings. The default grants full access (YOLO mode). You generally don't need to change this.
-
-After editing either file, rebuild the image:
-
-```bash
-just rebuild
-```
-
-Existing containers are **not** affected — only new containers created after the rebuild will pick up the changes.
-
----
-
-## Glossary
-
-| Term | Meaning |
-|------|---------|
-| **API key** | A secret string that authenticates you with Anthropic's servers |
-| **Bind mount** | A shared folder between your Mac and a container |
-| **Claude Code** | Anthropic's command-line AI coding assistant |
-| **Colima** | A free, lightweight Docker runtime for macOS |
-| **Container** | An isolated Linux environment running on your Mac |
-| **Docker** | The software that creates and manages containers |
-| **Dockerfile** | A blueprint that describes how to build a container image |
-| **Image** | A snapshot/template used to create containers (like a class vs an instance) |
-| **Justfile** | A file containing shortcut recipes for terminal commands |
-| **Repository (repo)** | A project folder tracked by git, often hosted on GitHub |
-| **`sudo`** | "Superuser do" — runs a command as the administrator. Inside the container, this works without a password |
-| **Virtual machine (VM)** | A complete simulated computer running inside your real computer |
-| **YOLO mode** | Running Claude without permission prompts (safe inside containers) |
-| **`~`** | Shorthand for your home folder in the terminal (e.g., `/Users/yourname` on a Mac) |
-| **`/workspace`** | The directory inside the container that maps to your project folder |
-| **`projects/`** | The directory on your Mac that holds all project folders |
+**Container won't start after Windows restart**
+Wait for Docker Desktop to fully start (whale icon stops animating), then run `just start <n>`.
