@@ -48,7 +48,6 @@ create name +args="":
 	docker_args=(
 		--name "claude-{{name}}"
 		--hostname "claude-{{name}}"
-		--detach
 		--restart unless-stopped
 		-v "{{projects_dir}}/{{name}}:/workspace"
 		-v "{{justfile_directory()}}/config/CLAUDE.md:/root/.claude/CLAUDE.md:ro"
